@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Bee-Bot pálya – akadályok, hang, törlés, ÚJRA</title>
+<style>
+:root{--cols:6;--rows:5;--cell-w:80px;--cell-h:80px;--gap:0px;}
+*{box-sizing:border-box;font-family:Inter,Roboto,Arial,sans-serif}
+body{margin:0;background:#f3f5f9;min-height:100vh;display:flex;justify-content:center;align-items:center;padding:12px;}
+.container{max-width:1200px;width:100%;display:grid;grid-template-columns:auto 360px;gap:16px;align-items:flex-start;}
+@media(max-width:1000px){.container{grid-template-columns:1fr;}}
+.panel{background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 18px rgba(0,0,0,.05);}
+h1{margin:0 0 8px;font-size:18px}
+.board-wrap{position:relative;display:inline-block;}
+#board{position:absolute;inset:0;display:grid;grid-template-columns:repeat(var(--cols),var(--cell-w));grid-template-rows:repeat(var(--rows),var(--cell-h));gap:var(--gap);pointer-events:none;}
+.cell{position:relative;border:1px solid rgba(255,255,255,0);pointer-events:auto;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:bold;color:red;}
+.cell.start{outline:3px dashed rgba(255,180,40,.9);}
+.cell.goal{outline:3px dashed rgba(80,140,255,.9);}
+.cell.obstacle::after{content:"❌";font-size:32px;color:#e11d48;}
+.bee{position:absolute;width:60px;height:70px;z-index:10;transition:top .25s,left .25s,transform .25s;transform-origin:50% 50%;pointer-events:none;}
+.bee img{width:100%;height:100%;object-fit:contain;display:block;}
+@keyframes shake{0%{transform:translate(0,0) rotate(0deg);}25%{transform:translate(-5px,0) rotate(-5deg);}50%{transform:translate(5px,0) rotate(5deg);}75%{transform:translate(-3px,0) rotate(-3deg);}100%{transform:translate(0,0) rotate(0deg);}}
+.bee.shake{animation:shake 0.4s ease;}
+.controls{display:flex;flex-direction:column;gap:12px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+button.btn{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:600;transition:all .2s}
+button.primary{background:#2563eb;color:#fff;border:none}
+button.active{background:#2563eb;color:#fff;border:none}
+.status{background:#eff6ff;padding:6px 10px;border-radius:8px;font-size:13px}
+.small{font-size:12px;color:#64748b}
+.program{min-height:50px;background:#f8fafc;border:1px dashed #dbeafe;border-radius:8px;padding:6px}
+.program .cmd{display:inline-block;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:3px 6px;margin:3px;font-size:12px;cursor:pointer;}
+.program .cmd:hover{background:#fee2e2;border-color:#f87171;}
+.speed-row{display:flex;gap:8px;justify-content:space-between}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="panel">
+    <h1>Bee-Bot pálya – akadályokkal és hanggal</h1>
+    <p class="small">
+      Katt: start • Shift+katt: cél • Ctrl+katt: akadály (❌).  
+      A Bee-Bot nem léphet az X-re – ha megpróbálja, rezeg és csipog.
+    </p>
+
+    <div class="board-wrap">
+      <img id="bgImg" src="https://raw.githubusercontent.com/kornyeineagnes-netizen/bee-bot-szimul-tor/a43bfff7d3c0645f5f150241e27a7b08e4a59b3a/%C5%90szi%20bee%20bot%20p%C3%A1lya2.png" style="display:block;max-width:100%;height:auto;">
+      <div id="board"></div>
+      <div id="bee" class="bee">
+        <img src="https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fcdn.shopify.com%2Fs%2Ffiles%2F1%2F2250%2F9987%2Fproducts%2FBee-Bot_Programmable_Floor_Robot_-_Image_2_1beed3b8-cf37-4714-9989-8ef3e4f5b9cc_1024x1024.png%3Fv%3D1516807665&f=1&nofb=1" alt="Bee-Bot">
+      </div>
+    </div>
+
+    <div style="margin-top:8px;display:flex;gap:16px">
+      <div class="small">Start: <span id="startCoord">–</span></div>
+      <div class="small">Cél: <span id="goalCoord">–</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="controls">
+      <div class="btn-row">
+        <button class="btn" data-cmd="forward">⬆ Előre</button>
+        <button class="btn" data-cmd="back">⬇ Hátra</button>
+        <button class="btn" data-cmd="left">⟲ Balra</button>
+        <button class="btn" data-cmd="right">⟳ Jobbra</button>
+      </div>
+
+      <div class="btn-row">
+        <button id="run" class="btn primary">▶ Futtatás</button>
+        <button id="step" class="btn">⤷ Lépés</button>
+        <button id="stop" class="btn">■ Stop</button>
+      </div>
+
+      <div class="btn-row">
+        <button id="undo" class="btn">↶ Visszavonás</button>
+        <button id="clear" class="btn">🧹 Töröl mind</button>
+        <button id="resetAll" class="btn">🔁 Újra</button>
+      </div>
+
+      <div>
+        <div class="small" id="speedLabel">Sebesség: 🐝 Közepes (0,8 s/lépés)</div>
+        <div class="speed-row">
+          <button class="btn speed-btn" data-speed="1200">🐢 Lassú</button>
+          <button class="btn speed-btn active" data-speed="800">🐝 Közepes</button>
+          <button class="btn speed-btn" data-speed="400">🐇 Gyors</button>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-weight:600;font-size:13px;margin-bottom:4px">Program</div>
+        <div id="program" class="program"></div>
+        <div class="small">Kattints egy utasításra a törléshez 🗑</div>
+      </div>
+
+      <div class="status" id="status">Készen áll</div>
+    </div>
+  </div>
+</div>
+
+<!-- 🔊 hangok -->
+<audio id="soundError" preload="auto">
+  <source src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" type="audio/ogg">
+</audio>
+<audio id="soundGoal" preload="auto">
+  <source src="https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg" type="audio/ogg">
+</audio>
+
+<script>
+(()=>{
+  const COLS=6,ROWS=5;
+  const bgImg=document.getElementById('bgImg');
+  const board=document.getElementById('board');
+  const beeEl=document.getElementById('bee');
+  const programEl=document.getElementById('program');
+  const statusEl=document.getElementById('status');
+  const startCoordEl=document.getElementById('startCoord');
+  const goalCoordEl=document.getElementById('goalCoord');
+  const speedBtns=document.querySelectorAll('.speed-btn');
+  const speedLabel=document.getElementById('speedLabel');
+  const sndError=document.getElementById('soundError');
+  const sndGoal=document.getElementById('soundGoal');
+
+  let cellW=80,cellH=80;
+  let start=null,goal=null;
+  let program=[],obstacles=new Set();
+  let running=false,timer=null,stepIndex=0;
+  let currentInterval=800;
+  const bee={row:0,col:0,dir:0};
+
+  bgImg.addEventListener('load',()=>{
+    const w=bgImg.clientWidth,h=bgImg.clientHeight;
+    cellW=w/COLS;cellH=h/ROWS;
+    board.style.gridTemplateColumns=`repeat(${COLS},${cellW}px)`;
+    board.style.gridTemplateRows=`repeat(${ROWS},${cellH}px)`;
+    board.style.width=w+'px';board.style.height=h+'px';
+    bee.row=0;bee.col=0;placeBee();makeCells();
+  });
+
+  function makeCells(){
+    board.innerHTML='';
+    for(let r=0;r<ROWS;r++){
+      for(let c=0;c<COLS;c++){
+        const cell=document.createElement('div');
+        cell.className='cell';
+        cell.dataset.r=r;cell.dataset.c=c;
+        cell.addEventListener('click',onCellClick);
+        board.appendChild(cell);
+      }
+    }
+  }
+
+  function onCellClick(e){
+    const r=Number(this.dataset.r),c=Number(this.dataset.c);
+    if(e.ctrlKey){
+      const key=r+','+c;
+      if(obstacles.has(key)){obstacles.delete(key);}else{obstacles.add(key);}
+    }else if(e.shiftKey){
+      goal=[r,c];
+      goalCoordEl.textContent=`${r+1},${c+1}`;
+    }else{
+      start=[r,c];
+      startCoordEl.textContent=`${r+1},${c+1}`;
+      bee.row=r;bee.col=c;bee.dir=0;
+    }
+    renderCells();placeBee();
+  }
+
+  function renderCells(){
+    document.querySelectorAll('.cell').forEach(cell=>{
+      cell.classList.remove('start','goal','obstacle');
+      const key=cell.dataset.r+','+cell.dataset.c;
+      if(obstacles.has(key))cell.classList.add('obstacle');
+    });
+    if(start){document.querySelectorAll('.cell')[start[0]*COLS+start[1]].classList.add('start');}
+    if(goal){document.querySelectorAll('.cell')[goal[0]*COLS+goal[1]].classList.add('goal');}
+    if(!start)startCoordEl.textContent='–';
+    if(!goal)goalCoordEl.textContent='–';
+  }
+
+  function placeBee(){
+    const top=bee.row*cellH+(cellH-beeEl.offsetHeight)/2;
+    const left=bee.col*cellW+(cellW-beeEl.offsetWidth)/2;
+    beeEl.style.top=top+'px';beeEl.style.left=left+'px';
+    beeEl.style.transform=`rotate(${bee.dir*90}deg)`;
+  }
+
+  function shakeBee(){beeEl.classList.add('shake');setTimeout(()=>beeEl.classList.remove('shake'),400);}
+  function playError(){try{sndError.currentTime=0;sndError.play();}catch(e){}}
+  function playGoal(){try{sndGoal.currentTime=0;sndGoal.play();}catch(e){}}
+
+  // sebesség gombok
+  speedBtns.forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      speedBtns.forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      currentInterval=Number(btn.dataset.speed);
+      const emoji=btn.textContent.split(' ')[0];
+      const label=btn.textContent.trim().replace(/^[🐢🐝🐇]\s*/,'');
+      const sec=(currentInterval/1000).toFixed(1);
+      speedLabel.textContent=`Sebesség: ${emoji} ${label} (${sec}s / lépés)`;
+      if(running)restartTimer();
+    });
+  });
+
+  function restartTimer(){if(timer)clearInterval(timer);timer=setInterval(runStep,currentInterval);}
+
+  // parancs gombok
+  document.querySelectorAll('[data-cmd]').forEach(btn=>{
+    btn.addEventListener('click',()=>{program.push(btn.dataset.cmd);updateProgramUI();});
+  });
+  document.getElementById('run').addEventListener('click',runProgram);
+  document.getElementById('step').addEventListener('click',stepProgram);
+  document.getElementById('stop').addEventListener('click',stop);
+  document.getElementById('undo').addEventListener('click',()=>{program.pop();updateProgramUI();});
+  document.getElementById('clear').addEventListener('click',()=>{program=[];updateProgramUI();status('Program törölve');});
+  document.getElementById('resetAll').addEventListener('click',resetAll);
+
+  function updateProgramUI(){
+    programEl.innerHTML='';
+    program.forEach((cmd,i)=>{
+      const el=document.createElement('span');
+      el.className='cmd';
+      el.textContent=displayCmd(cmd);
+      el.title=`${i+1}. lépés – kattints a törléshez`;
+      el.addEventListener('click',()=>{program.splice(i,1);updateProgramUI();});
+      programEl.appendChild(el);
+    });
+  }
+  function displayCmd(cmd){
+    switch(cmd){
+      case'forward':return'⬆ Előre';
+      case'back':return'⬇ Hátra';
+      case'left':return'⟲ Balra';
+      case'right':return'⟳ Jobbra';
+      default:return cmd;
+    }
+  }
+
+  function stepOnce(i){
+    if(i<0||i>=program.length)return true;
+    const cmd=program[i];
+    if(cmd==='left'){bee.dir=(bee.dir+3)%4;placeBee();return true;}
+    if(cmd==='right'){bee.dir=(bee.dir+1)%4;placeBee();return true;}
+    if(cmd==='forward'||cmd==='back'){
+      const sign=(cmd==='forward')?1:-1;
+      let dr=0,dc=0;
+      if(bee.dir===0)dr=-1*sign;
+      else if(bee.dir===1)dc=1*sign;
+      else if(bee.dir===2)dr=1*sign;
+      else if(bee.dir===3)dc=-1*sign;
+      const nr=bee.row+dr,nc=bee.col+dc,key=nr+','+nc;
+      if(nr<0||nr>=ROWS||nc<0||nc>=COLS){shakeBee();playError();status('❗ Kilépne a pályáról!',true);stop();return false;}
+      if(obstacles.has(key)){shakeBee();playError();status('🚫 Akadály! Nem léphet ide.',true);stop();return false;}
+      bee.row=nr;bee.col=nc;placeBee();
+      if(goal&&bee.row===goal[0]&&bee.col===goal[1]){status('🎉 Elérte a célt!');playGoal();}
+      return true;
+    }
+    return true;
+  }
+
+  function runProgram(){
+    if(running)return;
+    if(!program.length){status('Nincs program');return;}
+    running=true;stepIndex=0;status('Fut...');restartTimer();
+  }
+
+  function runStep(){
+    if(stepIndex>=program.length){stop();status('Program vége');return;}
+    const ok=stepOnce(stepIndex);
+    if(!ok)return;
+    stepIndex++;
+  }
+
+  function stepProgram(){
+    if(running)return;
+    if(!program.length){status('Nincs program');return;}
+    if(stepIndex>=program.length){status('Program vége');return;}
+    const ok=stepOnce(stepIndex);
+    if(!ok)return;
+    stepIndex++;status(`Lépés ${stepIndex}/${program.length}`);
+  }
+
+  function stop(){running=false;if(timer)clearInterval(timer);timer=null;stepIndex=0;}
+
+  function resetAll(){
+    // program leáll
+    stop();
+    // parancsok törlése
+    program=[];updateProgramUI();
+    // start, cél, akadályok törlése
+    start=null;goal=null;obstacles=new Set();
+    renderCells();
+    // méhecske alaphelyzet
+    bee.row=0;bee.col=0;bee.dir=0;placeBee();
+    status('Új pálya, állítsd be újra a startot és a célt!');
+  }
+
+  function status(t,err=false){
+    statusEl.textContent=t;
+    statusEl.style.background=err?'#fee2e2':'#eff6ff';
+    statusEl.style.color=err?'#991b1b':'#123067';
+  }
+
+  // billentyűk
+  document.addEventListener('keydown',ev=>{
+    if(ev.target.tagName==='INPUT')return;
+    if(ev.key.toLowerCase()==='f'){program.push('forward');updateProgramUI();}
+    if(ev.key.toLowerCase()==='b'){program.push('back');updateProgramUI();}
+    if(ev.key.toLowerCase()==='l'){program.push('left');updateProgramUI();}
+    if(ev.key.toLowerCase()==='r'){program.push('right');updateProgramUI();}
+    if(ev.key==='Enter'){runProgram();}
+    if(ev.code==='Space'){ev.preventDefault();stepProgram();}
+  });
+
+})();
+</script>
+</body>
+</html>
